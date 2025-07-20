@@ -3,9 +3,11 @@
     <h1>Sous-titrage TikTok</h1>
 
     <input type="file" accept="video/mp4" @change="onFileChange" />
-    <button @click="upload" :disabled="!selectedFile || loading">
+    <button @click="startProcess" :disabled="!selectedFile || loading">
       {{ loading ? "Traitement en cours..." : "Envoyer" }}
     </button>
+
+    <div v-if="progressMessage" style="margin-top: 20px;">{{ progressMessage }}</div>
 
     <div v-if="videoUrl" style="margin-top: 20px;">
       <h2>Vidéo sous-titrée</h2>
@@ -13,9 +15,7 @@
       <a :href="videoUrl" download="video_sous_titres.mp4">Télécharger</a>
     </div>
 
-    <div v-if="error" style="color: red; margin-top: 20px;">
-      Erreur : {{ error }}
-    </div>
+    <div v-if="error" style="color: red; margin-top: 20px;">Erreur : {{ error }}</div>
   </div>
 </template>
 
@@ -24,74 +24,68 @@ import { ref } from "vue";
 import axios from "axios";
 
 const selectedFile = ref(null);
-const videoUrl = ref("");
 const loading = ref(false);
+const progressMessage = ref("");
+const videoUrl = ref("");
 const error = ref("");
-
-// Remplace par l’URL publique de ton Space Hugging Face (API predict)
-const API_URL = "https://Walshi-sous-titres-tiktok-reels.hf.space/api/predict/";
+let taskId = null;
+let pollInterval = null;
 
 function onFileChange(event) {
-  error.value = "";
+  selectedFile.value = event.target.files[0];
   videoUrl.value = "";
-  const files = event.target.files;
-  if (files.length > 0 && files[0].type === "video/mp4") {
-    selectedFile.value = files[0];
-  } else {
-    error.value = "Merci de sélectionner une vidéo MP4.";
-  }
+  progressMessage.value = "";
+  error.value = "";
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = reader.result.split(",")[1]; // retire data:video/mp4;base64,
-      resolve(base64);
-    };
-    reader.onerror = error => reject(error);
-    reader.readAsDataURL(file);
-  });
-}
-
-async function upload() {
+async function startProcess() {
   if (!selectedFile.value) return;
   loading.value = true;
+  progressMessage.value = "Envoi de la vidéo...";
   error.value = "";
   videoUrl.value = "";
 
+  const formData = new FormData();
+  formData.append("file", selectedFile.value);
+
   try {
-    const base64Video = await fileToBase64(selectedFile.value);
-    const payload = {
-      data: [base64Video]
-    };
-
-    const response = await axios.post(API_URL, payload, {
-      headers: { "Content-Type": "application/json" },
-      responseType: "json",
+    const response = await axios.post("https://ton-backend/start", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
     });
+    taskId = response.data.task_id;
+    progressMessage.value = "Traitement démarré, attente du résultat...";
 
-    // réponse : base64 vidéo sous-titrée dans response.data.data[0]
-    const returnedBase64 = response.data.data[0];
-    const videoBlob = base64ToBlob(returnedBase64, "video/mp4");
-    videoUrl.value = URL.createObjectURL(videoBlob);
-
+    pollInterval = setInterval(checkStatus, 3000);
   } catch (err) {
-    console.error(err);
-    error.value = "Erreur lors de l’upload ou du traitement.";
-  } finally {
+    error.value = "Erreur lors de l'envoi.";
     loading.value = false;
   }
 }
 
-function base64ToBlob(base64, type = "application/octet-stream") {
-  const binary = atob(base64);
-  const len = binary.length;
-  const buffer = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    buffer[i] = binary.charCodeAt(i);
+async function checkStatus() {
+  try {
+    const response = await axios.get(`https://ton-backend/status/${taskId}`);
+    const status = response.data.status;
+
+    if (status === "done") {
+      clearInterval(pollInterval);
+      progressMessage.value = "Traitement terminé.";
+      videoUrl.value = response.data.video_url;
+      loading.value = false;
+    } else if (status === "error") {
+      clearInterval(pollInterval);
+      error.value = response.data.error || "Erreur pendant le traitement.";
+      progressMessage.value = "";
+      loading.value = false;
+    } else {
+      progressMessage.value = "Traitement en cours...";
+    }
+  } catch {
+    clearInterval(pollInterval);
+    error.value = "Erreur lors du suivi.";
+    progressMessage.value = "";
+    loading.value = false;
   }
-  return new Blob([buffer], { type });
 }
 </script>
 
