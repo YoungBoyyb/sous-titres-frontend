@@ -28,7 +28,7 @@ const videoUrl = ref("");
 const loading = ref(false);
 const error = ref("");
 
-// URL de ton Space Hugging Face
+// Remplace par l’URL publique de ton Space Hugging Face (API predict)
 const API_URL = "https://Walshi-sous-titres-tiktok-reels.hf.space/api/predict/";
 
 function onFileChange(event) {
@@ -46,7 +46,7 @@ function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = reader.result.split(",")[1]; // retire le préfixe data:video/mp4;base64,
+      const base64 = reader.result.split(",")[1]; // retire data:video/mp4;base64,
       resolve(base64);
     };
     reader.onerror = error => reject(error);
@@ -63,7 +63,7 @@ async function upload() {
   try {
     const base64Video = await fileToBase64(selectedFile.value);
     const payload = {
-      data: [base64Video]  // Gradio attend un tableau des inputs
+      data: [base64Video]
     };
 
     const response = await axios.post(API_URL, payload, {
@@ -71,10 +71,8 @@ async function upload() {
       responseType: "json",
     });
 
-    // La réponse Gradio contient souvent le résultat dans response.data.data[0] encodé en base64
+    // réponse : base64 vidéo sous-titrée dans response.data.data[0]
     const returnedBase64 = response.data.data[0];
-
-    // Convertir base64 en Blob pour afficher et télécharger la vidéo
     const videoBlob = base64ToBlob(returnedBase64, "video/mp4");
     videoUrl.value = URL.createObjectURL(videoBlob);
 
