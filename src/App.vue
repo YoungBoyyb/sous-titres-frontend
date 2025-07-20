@@ -28,7 +28,7 @@ const videoUrl = ref("");
 const loading = ref(false);
 const error = ref("");
 
-// Remplace par l’URL publique de ton Space Hugging Face
+// URL de ton Space Hugging Face
 const API_URL = "https://Walshi-sous-titres-tiktok-reels.hf.space/api/predict/";
 
 function onFileChange(event) {
@@ -42,6 +42,18 @@ function onFileChange(event) {
   }
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(",")[1]; // retire le préfixe data:video/mp4;base64,
+      resolve(base64);
+    };
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
 async function upload() {
   if (!selectedFile.value) return;
   loading.value = true;
@@ -49,21 +61,39 @@ async function upload() {
   videoUrl.value = "";
 
   try {
-    const formData = new FormData();
-    formData.append("file", selectedFile.value);
+    const base64Video = await fileToBase64(selectedFile.value);
+    const payload = {
+      data: [base64Video]  // Gradio attend un tableau des inputs
+    };
 
-    const response = await axios.post(API_URL, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-      responseType: "blob",
+    const response = await axios.post(API_URL, payload, {
+      headers: { "Content-Type": "application/json" },
+      responseType: "json",
     });
 
-    const blob = new Blob([response.data], { type: "video/mp4" });
-    videoUrl.value = URL.createObjectURL(blob);
+    // La réponse Gradio contient souvent le résultat dans response.data.data[0] encodé en base64
+    const returnedBase64 = response.data.data[0];
+
+    // Convertir base64 en Blob pour afficher et télécharger la vidéo
+    const videoBlob = base64ToBlob(returnedBase64, "video/mp4");
+    videoUrl.value = URL.createObjectURL(videoBlob);
+
   } catch (err) {
+    console.error(err);
     error.value = "Erreur lors de l’upload ou du traitement.";
   } finally {
     loading.value = false;
   }
+}
+
+function base64ToBlob(base64, type = "application/octet-stream") {
+  const binary = atob(base64);
+  const len = binary.length;
+  const buffer = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    buffer[i] = binary.charCodeAt(i);
+  }
+  return new Blob([buffer], { type });
 }
 </script>
 
